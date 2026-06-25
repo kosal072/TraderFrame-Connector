@@ -25,12 +25,43 @@ Override host/port with env vars: `HOST=127.0.0.1 PORT=9000 .venv/bin/python con
 
 ## Endpoints
 
-| Method | Path       | Purpose                                              |
-|--------|------------|------------------------------------------------------|
-| GET    | `/health`  | Liveness + shows whether a destination is configured |
-| POST   | `/forward` | Receive routine response, transform, forward         |
+| Method | Path           | Purpose                                                        |
+|--------|----------------|----------------------------------------------------------------|
+| GET    | `/health`      | Liveness + shows whether a destination is configured           |
+| POST   | `/forward`     | Receive routine response, transform, forward                   |
+| GET    | `/state`       | Show the last side forwarded per symbol (position memory)      |
+| POST   | `/state/clear` | Reset position memory (`?symbol=SOLUSDT` for one, or all)      |
 
-Point your Claude Routine's webhook at `http://<host>:8000/forward`.
+Point your Claude Routine at `http://localhost:8000/forward`. Add `?force=1` to `/forward`
+to bypass the position-aware dedupe for one request.
+
+## Use it with Claude (Routines / scheduled tasks)
+
+You do **not** need a server or any account — the connector runs on your own machine, and
+your Claude scheduled task runs locally too, so it reaches the connector at `localhost`.
+
+1. **Run the connector** (see Setup above). Confirm `curl localhost:8000/health` responds.
+2. **Point it at your endpoint:** edit `destination_url` and `template` in `config.json`.
+   Keep `"dry_run": true` until you've tested — it logs the payload instead of sending.
+3. **Create a Claude scheduled task** (ask Claude to "schedule a task", or use the
+   **Scheduled** panel). Paste a prompt like this, edited for your symbol/logic:
+
+   ```
+   Analyze <YOUR SYMBOL>, decide a single direction (buy or sell), then run:
+
+   curl -s -X POST http://localhost:8000/forward \
+     -H "Content-Type: application/json" \
+     -d '{"response": "Side: <buy|sell>, Symbol: <YOUR SYMBOL>"}'
+
+   Phrase the final line exactly as "Side: <buy|sell>, Symbol: <SYMBOL>" so it parses.
+   Report whether the response was forwarded (200), skipped (no change), or rejected.
+   ```
+
+4. **Test, then go live:** run the task once with `dry_run: true` and check the output /
+   `connector.out.log`. When the payload looks right, set `"dry_run": false`.
+
+The connector is **position-aware**: it only forwards when the side *changes* for a symbol,
+so repeated same-side signals are skipped instead of firing duplicate actions.
 
 ## Configuration (`config.json`)
 
