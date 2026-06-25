@@ -140,7 +140,9 @@ def extract_fields_from_text(text: str) -> dict:
     for field, pattern in _FIELD_PATTERNS.items():
         m = re.search(pattern, text, re.IGNORECASE)
         if m:
-            found[field] = m.group(1).strip().replace(",", "")
+            # Strip trailing sentence punctuation (e.g. "BTCUSDT." -> "BTCUSDT")
+            # while keeping mid-symbol dots/slashes like BRK.B or BTC/USDT.
+            found[field] = m.group(1).strip().rstrip(".,;:!?").replace(",", "")
     return found
 
 
