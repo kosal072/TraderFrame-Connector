@@ -305,12 +305,20 @@ def forward():
         log.error("Forward failed: %s", exc)
         return jsonify(error="forward_failed", detail=str(exc), payload=outgoing), 502
 
-    log.info("Forwarded -> %s (%s)", destination_url, resp.status_code)
     body = resp.text
     try:
         body = resp.json()
     except ValueError:
         pass
+
+    if resp.ok:
+        log.info("Forwarded -> %s (%s): %s", destination_url, resp.status_code, body)
+    else:
+        # Surface the destination's explanation so 4xx/5xx aren't a mystery.
+        log.warning(
+            "Forward rejected -> %s (%s): %s | sent: %s",
+            destination_url, resp.status_code, body, json.dumps(outgoing),
+        )
 
     return jsonify(
         ok=resp.ok,
