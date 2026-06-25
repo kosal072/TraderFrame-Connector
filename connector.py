@@ -56,6 +56,32 @@ def load_config() -> dict:
 
 
 # --------------------------------------------------------------------------- #
+# Position state: remember the last side forwarded per symbol so we don't
+# send a duplicate/conflicting signal (which trading endpoints often 400 on).
+# --------------------------------------------------------------------------- #
+
+def state_path(cfg: dict) -> Path:
+    p = Path(cfg.get("state_file", "state.json"))
+    return p if p.is_absolute() else BASE_DIR / p
+
+
+def load_state(cfg: dict) -> dict:
+    try:
+        with open(state_path(cfg), "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def save_state(cfg: dict, state: dict) -> None:
+    try:
+        with open(state_path(cfg), "w", encoding="utf-8") as fh:
+            json.dump(state, fh, indent=2)
+    except OSError as exc:
+        log.error("Could not write state file: %s", exc)
+
+
+# --------------------------------------------------------------------------- #
 # Extraction:  raw incoming payload  ->  signal dict
 # --------------------------------------------------------------------------- #
 
@@ -250,6 +276,26 @@ def health():
     )
 
 
+@app.get("/state")
+def get_state():
+    """Show the last side forwarded per symbol (the connector's view of position)."""
+    return jsonify(load_state(load_config()))
+
+
+@app.post("/state/clear")
+def clear_state():
+    """Reset remembered positions. Clear one symbol with ?symbol=SOLUSDT, or all."""
+    cfg = load_config()
+    symbol = request.args.get("symbol")
+    state = load_state(cfg)
+    if symbol:
+        state.pop(symbol.upper(), None)
+    else:
+        state = {}
+    save_state(cfg, state)
+    return jsonify(ok=True, state=state)
+
+
 @app.post("/forward")
 def forward():
     cfg = load_config()
@@ -286,12 +332,37 @@ def forward():
             return jsonify(error="template not set in config.json (mode=template)"), 500
         outgoing = render(template, context, cfg.get("coerce_numbers", True))
 
+    # --- position-aware dedupe ---------------------------------------------- #
+    # Only act when the direction CHANGES for a symbol. Avoids sending a second
+    # 'buy' while already long (which the endpoint rejects). A 'sell' after a
+    # 'buy' is a real change, so it passes through (flip/close). Bypass with
+    # ?force=1.
+    symbol = str(context.get("symbol", "")).upper()
+    side = str(context.get("side", "")).lower()
+    force = request.args.get("force") in ("1", "true", "yes")
+    dedupe = cfg.get("dedupe_consecutive", True) and mode == "template"
+
+    if dedupe and symbol and side and not force:
+        state = load_state(cfg)
+        if state.get(symbol) == side:
+            log.info("Skipped duplicate signal: %s %s already active (no change)", side, symbol)
+            return jsonify(
+                skipped=True,
+                reason=f"no change: last side for {symbol} is already '{side}'",
+                current_side=side,
+                payload=outgoing,
+            ), 200
+
     # --- forward ------------------------------------------------------------ #
     headers = {"Content-Type": "application/json"}
     headers.update(cfg.get("destination_headers", {}))
 
     if cfg.get("dry_run"):
         log.info("DRY RUN -> would POST to %s : %s", destination_url, outgoing)
+        if dedupe and symbol and side:
+            state = load_state(cfg)
+            state[symbol] = side
+            save_state(cfg, state)
         return jsonify(dry_run=True, destination=destination_url, payload=outgoing)
 
     try:
@@ -313,6 +384,11 @@ def forward():
 
     if resp.ok:
         log.info("Forwarded -> %s (%s): %s", destination_url, resp.status_code, body)
+        # Record the new active side only after a confirmed success.
+        if dedupe and symbol and side:
+            state = load_state(cfg)
+            state[symbol] = side
+            save_state(cfg, state)
     else:
         # Surface the destination's explanation so 4xx/5xx aren't a mystery.
         log.warning(
