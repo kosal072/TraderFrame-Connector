@@ -1,0 +1,60 @@
+{
+  "manifest_version": "0.3",
+  "name": "traderframe-connector",
+  "display_name": "TraderFrame Connector",
+  "version": "1.0.0",
+  "description": "Send position-aware buy/sell trading signals to your webhook (ATS / TradingView / any endpoint).",
+  "long_description": "TraderFrame Connector lets Claude send trading signals to a webhook URL you configure (for example an ATS or TradingView-style alert endpoint). It is position-aware: it only forwards a signal when the direction changes for a symbol, so repeated same-side signals are skipped instead of firing duplicate trades. Tools: send a signal, view tracked positions, and reset position memory.",
+  "author": {
+    "name": "TraderFrame Pte. Ltd.",
+    "url": "https://github.com/kosal072/TraderFrame-Connector"
+  },
+  "homepage": "https://github.com/kosal072/TraderFrame-Connector",
+  "documentation": "https://github.com/kosal072/TraderFrame-Connector#readme",
+  "icon": "icon.png",
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/index.js"],
+      "env": {
+        "DESTINATION_URL": "${user_config.destination_url}",
+        "DRY_RUN": "${user_config.dry_run}",
+        "DEDUPE": "${user_config.dedupe}",
+        "STATE_FILE": "${HOME}/.traderframe-connector/state.json"
+      }
+    }
+  },
+  "user_config": {
+    "destination_url": {
+      "type": "string",
+      "title": "Webhook URL",
+      "description": "The endpoint signals are POSTed to, e.g. https://api.ats.miraiminds.co/v1/alerts/trading-view/<id>",
+      "required": true,
+      "sensitive": true
+    },
+    "dry_run": {
+      "type": "boolean",
+      "title": "Dry run (test mode)",
+      "description": "When on, signals are not actually sent — useful for testing. Turn off to go live.",
+      "default": true
+    },
+    "dedupe": {
+      "type": "boolean",
+      "title": "Position-aware dedupe",
+      "description": "Only send a signal when the side changes for a symbol (recommended).",
+      "default": true
+    }
+  },
+  "tools": [
+    { "name": "traderframe_send_signal", "description": "Send a buy/sell signal for a symbol to the configured webhook." },
+    { "name": "traderframe_get_positions", "description": "Show the last side forwarded per symbol (tracked positions)." },
+    { "name": "traderframe_clear_position", "description": "Reset tracked position memory for one symbol or all." }
+  ],
+  "keywords": ["trading", "signals", "webhook", "tradingview", "ats", "crypto"],
+  "license": "MIT",
+  "compatibility": {
+    "runtimes": { "node": ">=18.0.0" }
+  }
+}

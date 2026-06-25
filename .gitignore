@@ -3,3 +3,7 @@
 __pycache__/
 config.json
 state.json
+
+# built MCP bundle (shipped via GitHub Releases)
+traderframe-connector.mcpb
+mcp-server/server/
