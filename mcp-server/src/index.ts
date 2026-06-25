@@ -27,6 +27,7 @@ import { join, dirname } from "node:path";
 // --------------------------------------------------------------------------- //
 
 const DESTINATION_URL = (process.env.DESTINATION_URL || "").trim();
+const DEFAULT_SYMBOL = (process.env.DEFAULT_SYMBOL || "").trim();
 const DRY_RUN = /^(1|true|yes)$/i.test(process.env.DRY_RUN || "");
 const DEDUPE = !/^(0|false|no)$/i.test(process.env.DEDUPE ?? "true");
 const TIMEOUT_MS = parseInt(process.env.TIMEOUT_MS || "15000", 10);
@@ -193,7 +194,12 @@ const SendSignalSchema = z.object({
     .string()
     .min(1)
     .max(40)
-    .describe("Trading symbol/ticker, e.g. 'SOLUSDT' or 'BTC/USDT'."),
+    .optional()
+    .describe(
+      "Trading symbol/ticker, e.g. 'SOLUSDT'. OPTIONAL — if omitted, the symbol the " +
+      "user configured in the connector's settings is used. Only pass this to override " +
+      "that default (e.g. to signal a different symbol).",
+    ),
   comment: z
     .string()
     .max(280)
@@ -215,7 +221,9 @@ This is the primary tool. It is POSITION-AWARE: by default it only forwards when
 
 Args:
   - side ('buy' | 'sell'): trade direction. Required.
-  - symbol (string): ticker, e.g. 'SOLUSDT'. Required.
+  - symbol (string): ticker, e.g. 'SOLUSDT'. OPTIONAL — defaults to the symbol the user
+    configured in the connector's settings. Only pass it to override that default. Do NOT
+    invent a symbol; if the user hasn't named one, omit it and the configured symbol is used.
   - comment (string): optional short rationale, included in the payload.
   - force (boolean): set true to bypass dedupe and send anyway (default false).
 
@@ -247,8 +255,21 @@ Never claim a trade executed unless status is "forwarded".`,
     },
   },
   async (params: z.infer<typeof SendSignalSchema>) => {
+    const symbol = (params.symbol ?? DEFAULT_SYMBOL).trim();
+    if (!symbol) {
+      const result: ForwardResult = {
+        status: "error", side: params.side, symbol: "", payload: {},
+        detail:
+          "No symbol provided and no default symbol is configured. Set a 'Symbol / ticker' " +
+          "in the connector's settings, or pass a symbol explicitly.",
+      };
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        structuredContent: result as unknown as Record<string, unknown>,
+      };
+    }
     const extra = params.comment ? { comment: params.comment } : undefined;
-    const result = await forwardSignal(params.side, params.symbol, extra, params.force);
+    const result = await forwardSignal(params.side, symbol, extra, params.force);
     return {
       content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
       structuredContent: result as unknown as Record<string, unknown>,

@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "traderframe-connector",
   "display_name": "TraderFrame Connector",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Send position-aware buy/sell trading signals to your webhook (ATS / TradingView / any endpoint).",
   "long_description": "TraderFrame Connector lets Claude send trading signals to a webhook URL you configure (for example an ATS or TradingView-style alert endpoint). It is position-aware: it only forwards a signal when the direction changes for a symbol, so repeated same-side signals are skipped instead of firing duplicate trades. Tools: send a signal, view tracked positions, and reset position memory.",
   "author": {
@@ -20,6 +20,7 @@
       "args": ["${__dirname}/server/index.js"],
       "env": {
         "DESTINATION_URL": "${user_config.destination_url}",
+        "DEFAULT_SYMBOL": "${user_config.symbol}",
         "DRY_RUN": "${user_config.dry_run}",
         "DEDUPE": "${user_config.dedupe}",
         "STATE_FILE": "${HOME}/.traderframe-connector/state.json"
@@ -33,6 +34,12 @@
       "description": "The endpoint signals are POSTed to, e.g. https://api.ats.miraiminds.co/v1/alerts/trading-view/<id>",
       "required": true,
       "sensitive": true
+    },
+    "symbol": {
+      "type": "string",
+      "title": "Symbol / ticker",
+      "description": "The trading symbol you want signals for, e.g. SOLUSDT. Used when you don't name a symbol in your request.",
+      "required": true
     },
     "dry_run": {
       "type": "boolean",

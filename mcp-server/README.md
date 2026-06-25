@@ -33,8 +33,13 @@ with `{ side: "buy", symbol: "SOLUSDT" }`.
 | Setting | Default | Meaning |
 |---------|---------|---------|
 | Webhook URL | — (required) | Where signals are POSTed as `{"side","symbol"}`. |
+| Symbol / ticker | — (required) | The symbol you trade, e.g. `SOLUSDT`. Used when you don't name one in the request. |
 | Dry run | on | Don't actually send — for testing. Turn off to go live. |
 | Position-aware dedupe | on | Only send when the side changes for a symbol. |
+
+You set **your** symbol once in settings, so Claude only decides the side. Example:
+*"Send a buy signal"* → uses your configured symbol. Pass a symbol explicitly only to
+override it (*"send a sell for ETHUSDT"*).
 
 State (tracked positions) is stored at `~/.traderframe-connector/state.json`.
 
