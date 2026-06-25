@@ -1,0 +1,15 @@
+{
+  "destination_url": "https://your-endpoint.example.com/v1/alerts/trading-view/REPLACE_WITH_YOUR_ID",
+  "mode": "template",
+  "coerce_numbers": true,
+  "timeout": 15,
+  "dry_run": true,
+
+  "incoming_secret": "",
+  "destination_headers": {},
+
+  "template": {
+    "side": "{{side}}",
+    "symbol": "{{symbol}}"
+  }
+}

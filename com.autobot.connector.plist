@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Run the connector as a background service on macOS that starts at login
+  and restarts if it crashes.
+
+  Install:
+    cp com.autobot.connector.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.autobot.connector.plist
+  Stop / uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.autobot.connector.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.autobot.connector</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/ABSOLUTE/PATH/TO/TraderFrame-Connector/.venv/bin/gunicorn</string>
+        <string>-c</string>
+        <string>gunicorn.conf.py</string>
+        <string>wsgi:app</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/ABSOLUTE/PATH/TO/TraderFrame-Connector</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PORT</key>
+        <string>8000</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/ABSOLUTE/PATH/TO/TraderFrame-Connector/connector.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/ABSOLUTE/PATH/TO/TraderFrame-Connector/connector.err.log</string>
+</dict>
+</plist>
