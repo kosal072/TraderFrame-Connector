@@ -103,7 +103,11 @@ async function forwardSignal(
 ): Promise<ForwardResult> {
   const side = normalizeSide(sideRaw);
   const symbol = normalizeSymbol(symbolRaw);
-  const payload: Record<string, unknown> = { side, symbol, ...(extra ?? {}) };
+  // The forwarded body is STRICTLY { side, symbol } — the exact JSON shape the
+  // endpoint expects. `extra` (e.g. a comment) is kept for the tool result only,
+  // never added to what we POST, so the endpoint receives clean JSON.
+  void extra;
+  const payload: Record<string, unknown> = { side, symbol };
 
   if (!DESTINATION_URL) {
     return {
@@ -206,7 +210,7 @@ const SendSignalSchema = z.object({
     .string()
     .max(280)
     .optional()
-    .describe("Optional note included in the payload (e.g. a short rationale)."),
+    .describe("Optional short rationale, kept for logging only. NOT sent to the endpoint."),
   force: z
     .boolean()
     .default(false)
@@ -231,7 +235,7 @@ Args:
   - symbol (string): ticker, e.g. 'SOLUSDT'. OPTIONAL — defaults to the symbol the user
     configured in the connector's settings. Only pass it to override that default. Do NOT
     invent a symbol; if the user hasn't named one, omit it and the configured symbol is used.
-  - comment (string): optional short rationale, included in the payload.
+  - comment (string): optional short rationale, kept for logging only — NOT sent to the endpoint.
   - force (boolean): set true to bypass dedupe and send anyway (default false).
 
 Returns JSON:
