@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "traderframe-connector",
   "display_name": "TraderFrame Connector",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Send position-aware buy/sell trading signals to your webhook (ATS / TradingView / any endpoint).",
   "long_description": "TraderFrame Connector lets Claude send trading signals to a webhook URL you configure (for example an ATS or TradingView-style alert endpoint). It is position-aware: it only forwards a signal when the direction changes for a symbol, so repeated same-side signals are skipped instead of firing duplicate trades. Tools: send a signal, view tracked positions, and reset position memory.",
   "author": {

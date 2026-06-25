@@ -1,6 +1,6 @@
 {
   "name": "traderframe-connector-mcp-server",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "MCP server that sends buy/sell trading signals to a configured webhook (position-aware).",
   "type": "module",
   "main": "server/index.js",
