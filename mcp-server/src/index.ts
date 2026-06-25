@@ -17,6 +17,10 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import express from "express";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -184,8 +188,6 @@ async function forwardSignal(
 // MCP server + tools
 // --------------------------------------------------------------------------- //
 
-const server = new McpServer({ name: "traderframe-connector-mcp-server", version: "1.0.0" });
-
 const SideEnum = z.enum(["buy", "sell"]);
 
 const SendSignalSchema = z.object({
@@ -210,6 +212,11 @@ const SendSignalSchema = z.object({
     .default(false)
     .describe("Bypass position-aware dedupe and send even if the side is unchanged."),
 }).strict();
+
+// Build a fresh server instance with all tools registered. A new instance is
+// created per HTTP request (stateless), and once for stdio.
+function createServer(): McpServer {
+  const server = new McpServer({ name: "traderframe-connector-mcp-server", version: "1.0.3" });
 
 server.registerTool(
   "traderframe_send_signal",
@@ -344,23 +351,104 @@ Returns the updated state JSON.`,
   },
 );
 
+  return server;
+}
+
 // --------------------------------------------------------------------------- //
-// Start
+// Transports / start
 // --------------------------------------------------------------------------- //
 
-async function main(): Promise<void> {
+const MCP_AUTH_TOKEN = (process.env.MCP_AUTH_TOKEN || "").trim();
+
+function authorized(req: express.Request): boolean {
+  if (!MCP_AUTH_TOKEN) return true; // no token configured -> open (not recommended for public)
+  const header = (req.headers["authorization"] as string | undefined) || "";
+  const bearer = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+  const fromPath = (req.params?.token as string | undefined) || "";
+  const fromQuery = (req.query?.token as string | undefined) || "";
+  return [bearer, fromPath, fromQuery].includes(MCP_AUTH_TOKEN);
+}
+
+// Local (Claude Desktop .mcpb) — speaks stdio.
+async function runStdio(): Promise<void> {
+  const server = createServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error(
-    `traderframe-connector-mcp running (dest=${DESTINATION_URL || "UNSET"}, ` +
-    `dry_run=${DRY_RUN}, dedupe=${DEDUPE})`,
+    `traderframe-connector-mcp (stdio) ready (dest=${DESTINATION_URL || "UNSET"}, ` +
+    `symbol=${DEFAULT_SYMBOL || "UNSET"}, dry_run=${DRY_RUN}, dedupe=${DEDUPE})`,
   );
-  if (!existsSync(dirname(STATE_FILE))) {
-    try { mkdirSync(dirname(STATE_FILE), { recursive: true }); } catch { /* ignore */ }
-  }
 }
 
-main().catch((err) => {
+// Remote (cloud Routines / custom connector) — streamable HTTP with sessions.
+async function runHttp(): Promise<void> {
+  const app = express();
+  app.use(express.json());
+
+  // Active sessions: session id -> transport (each backed by its own server).
+  const transports: Record<string, StreamableHTTPServerTransport> = {};
+
+  app.get("/health", (_req, res) => {
+    res.json({ ok: true, destination_configured: Boolean(DESTINATION_URL), dry_run: DRY_RUN });
+  });
+
+  const POST = async (req: express.Request, res: express.Response): Promise<void> => {
+    if (!authorized(req)) {
+      res.status(401).json({ jsonrpc: "2.0", error: { code: -32001, message: "Unauthorized" }, id: null });
+      return;
+    }
+    const sid = req.headers["mcp-session-id"] as string | undefined;
+    let transport: StreamableHTTPServerTransport;
+
+    if (sid && transports[sid]) {
+      transport = transports[sid];
+    } else if (!sid && isInitializeRequest(req.body)) {
+      transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomUUID(),
+        enableJsonResponse: true,
+        onsessioninitialized: (id) => { transports[id] = transport; },
+      });
+      transport.onclose = () => {
+        if (transport.sessionId) delete transports[transport.sessionId];
+      };
+      const server = createServer();
+      await server.connect(transport);
+    } else {
+      res.status(400).json({
+        jsonrpc: "2.0",
+        error: { code: -32000, message: "Bad Request: no valid session id (send initialize first)" },
+        id: null,
+      });
+      return;
+    }
+    await transport.handleRequest(req, res, req.body);
+  };
+
+  // GET (server->client stream) and DELETE (end session) reuse an existing session.
+  const SESSION = async (req: express.Request, res: express.Response): Promise<void> => {
+    if (!authorized(req)) { res.status(401).end(); return; }
+    const sid = req.headers["mcp-session-id"] as string | undefined;
+    if (!sid || !transports[sid]) { res.status(400).send("Invalid or missing session id"); return; }
+    await transports[sid].handleRequest(req, res);
+  };
+
+  // Token may also be supplied in the path: /mcp/<token>.
+  app.post(["/mcp", "/mcp/:token"], POST);
+  app.get(["/mcp", "/mcp/:token"], SESSION);
+  app.delete(["/mcp", "/mcp/:token"], SESSION);
+
+  const port = parseInt(process.env.PORT || "3000", 10);
+  app.listen(port, () => {
+    console.error(
+      `traderframe-connector-mcp (http) on :${port}/mcp ` +
+      `(auth=${MCP_AUTH_TOKEN ? "token" : "OPEN"}, dest=${DESTINATION_URL || "UNSET"}, ` +
+      `symbol=${DEFAULT_SYMBOL || "UNSET"}, dry_run=${DRY_RUN})`,
+    );
+  });
+}
+
+const mode = (process.env.TRANSPORT || (process.env.PORT ? "http" : "stdio")).toLowerCase();
+(mode === "http" ? runHttp() : runStdio()).catch((err) => {
   console.error("Fatal:", err);
   process.exit(1);
 });

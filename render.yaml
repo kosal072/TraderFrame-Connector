@@ -1,0 +1,29 @@
+# Render Blueprint for the TraderFrame Connector remote MCP server.
+# Deploy: Render Dashboard -> New -> Blueprint -> pick this repo -> Apply.
+# Then set DESTINATION_URL, and copy the generated MCP_AUTH_TOKEN to use when
+# adding the connector in Claude.
+services:
+  - type: web
+    name: traderframe-connector-mcp
+    runtime: node
+    rootDir: mcp-server
+    plan: free
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: node server/index.js
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: TRANSPORT
+        value: http
+      - key: DEFAULT_SYMBOL
+        value: SOLUSDT
+      - key: DRY_RUN
+        value: "true"
+      - key: DEDUPE
+        value: "true"
+      - key: STATE_FILE
+        value: /tmp/traderframe-state.json
+      - key: DESTINATION_URL
+        sync: false          # set this in the Render dashboard (your webhook URL)
+      - key: MCP_AUTH_TOKEN
+        generateValue: true  # Render generates a secret; copy it for the connector
